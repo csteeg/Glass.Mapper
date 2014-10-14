@@ -131,6 +131,7 @@
   <ItemGroup>
     <Compile Include="CodeFirst\FieldInfo.cs" />
     <Compile Include="CodeFirst\GlassDataProvider.cs" />
+    <Compile Include="CodeFirst\GlassItemDefinition.cs" />
     <Compile Include="CodeFirst\SectionInfo.cs" />
     <Compile Include="Config.cs" />
     <Compile Include="Configuration\Attributes\SitecoreAttributeConfigurationLoader.cs" />
