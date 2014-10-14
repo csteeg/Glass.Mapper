@@ -16,6 +16,7 @@
 */
 using System;
 using System.Collections.Generic;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Data;
 using System.Diagnostics;
@@ -104,13 +105,13 @@ namespace Glass.Mapper.Sc.CodeFirst
         /// Gets or sets the section table.
         /// </summary>
         /// <value>The section table.</value>
-        private List<SectionInfo> SectionTable { get; set; }
+        private ImmutableList<SectionInfo> SectionTable { get; set; }
 
         /// <summary>
         /// Gets or sets the field table.
         /// </summary>
         /// <value>The field table.</value>
-        private List<FieldInfo> FieldTable { get; set; }
+        private ImmutableList<FieldInfo> FieldTable { get; set; }
 
         /// <summary>
         /// Gets the current context.
@@ -144,8 +145,8 @@ namespace Glass.Mapper.Sc.CodeFirst
         /// </summary>
         public GlassDataProvider()
         {
-            SectionTable = new List<SectionInfo>();
-            FieldTable = new List<FieldInfo>();
+            SectionTable = ImmutableList<SectionInfo>.Empty;
+            FieldTable = ImmutableList<FieldInfo>.Empty;
         }
 
         /// <summary>
@@ -171,16 +172,18 @@ namespace Glass.Mapper.Sc.CodeFirst
             if (!_setupComplete)
                 return base.GetItemDefinition(itemId, context);
 
-            var section = SectionTable.FirstOrDefault(x => x.SectionId == itemId);
+            var sectiontable = SectionTable.ToList();//prevent "Collection was modified"
+            var section = sectiontable.FirstOrDefault(x => x.SectionId == itemId);
             if (section != null)
             {
-                return new ItemDefinition(itemId, section.Name, SectionTemplateId, ID.Null);
+                return  new GlassItemDefinition(itemId, section.Name, SectionTemplateId, ID.Null);
             }
 
-            var field = FieldTable.FirstOrDefault(x => x.FieldId == itemId);
+            var fieldtable = FieldTable.ToList();//prevent "Collection was modified"
+            var field = fieldtable.FirstOrDefault(x => x.FieldId == itemId);
             if (field != null)
             {
-                return new ItemDefinition(itemId, field.Name, FieldTemplateId, ID.Null);
+                return new GlassItemDefinition(itemId, field.Name, FieldTemplateId, ID.Null);
             }
 
             return base.GetItemDefinition(itemId, context);
@@ -194,7 +197,14 @@ namespace Glass.Mapper.Sc.CodeFirst
         /// <returns>LanguageCollection.</returns>
         public override LanguageCollection GetLanguages(CallContext context)
         {
-            return new LanguageCollection();
+            return GetSqlProvider(this.Database).GetLanguages(context);
+        }
+
+        public override VersionUriList GetItemVersions(ItemDefinition itemDefinition, CallContext context)
+        {
+            if (itemDefinition is GlassItemDefinition)
+                return base.GetItemVersions(itemDefinition, context);
+            return null;
         }
 
         #region GetItemFields
@@ -213,22 +223,20 @@ namespace Glass.Mapper.Sc.CodeFirst
 
             var fields = new FieldList();
 
-            var sectionInfo = SectionTable.FirstOrDefault(x => x.SectionId == itemDefinition.ID);
+            var sectionTable = SectionTable.ToList();//prevent "Collection was modified"
+            var sectionInfo = sectionTable.FirstOrDefault(x => x.SectionId == itemDefinition.ID);
             if (sectionInfo != null)
             {
-                GetStandardFields(fields,
-                    sectionInfo.SectionSortOrder >= 0
-                        ? sectionInfo.SectionSortOrder
-                        : (SectionTable.IndexOf(sectionInfo) + 100));
+                GetStandardFields(fields, sectionInfo.SectionSortOrder >= 0 ? sectionInfo.SectionSortOrder : 100);
 
                 return fields;
             }
 
-            var fieldInfo = FieldTable.FirstOrDefault(x => x.FieldId == itemDefinition.ID);
+            var fieldtable = FieldTable.ToList();//prevent "Collection was modified"
+            var fieldInfo = fieldtable.FirstOrDefault(x => x.FieldId == itemDefinition.ID);
             if (fieldInfo != null)
             {
-                GetStandardFields(fields,
-                    fieldInfo.FieldSortOrder >= 0 ? fieldInfo.FieldSortOrder : (FieldTable.IndexOf(fieldInfo) + 100));
+                GetStandardFields(fields, fieldInfo.FieldSortOrder >= 0 ? fieldInfo.FieldSortOrder : 100);
                 GetFieldFields(fieldInfo, fields);
                 return fields;
             }
@@ -347,13 +355,12 @@ namespace Glass.Mapper.Sc.CodeFirst
                 {
                     var exists = existing.FirstOrDefault(def => def.Name.Equals(section.SectionName, StringComparison.InvariantCultureIgnoreCase));
                     var newId = GetUniqueGuid(itemDefinition.ID + section.SectionName);
-                    const int newSortOrder = 100;
-                    
+
                     record = exists != null ?
                         new SectionInfo(section.SectionName, exists.ID, itemDefinition.ID, section.SectionSortOrder) { Existing = true } :
-                        new SectionInfo(section.SectionName, new ID(newId), itemDefinition.ID, newSortOrder);
+                        new SectionInfo(section.SectionName, new ID(newId), itemDefinition.ID, 100);
 
-                    SectionTable.Add(record);
+                    SectionTable = SectionTable.Add(record);
                 }
 
                 processed.Add(section.SectionName);
@@ -365,7 +372,7 @@ namespace Glass.Mapper.Sc.CodeFirst
             //we need to add sections already in the db, 'cause we have to 
             foreach (var sqlOne in existing.Where(ex => SectionTable.All(s => s.SectionId != ex.ID)))
             {
-                SectionTable.Add(new SectionInfo(sqlOne.Name, sqlOne.ID, itemDefinition.ID, 0) { Existing = true } );
+                SectionTable = SectionTable.Add(new SectionInfo(sqlOne.Name, sqlOne.ID, itemDefinition.ID, 0) { Existing = true });
             }
 
             return fields;
@@ -389,7 +396,7 @@ namespace Glass.Mapper.Sc.CodeFirst
 
             IDList fieldIds = new IDList();
 
-            var interfaces = cls.Type.GetInterfaces();
+            var interfaces = cls.Type.GetInterfaces().Where(i => System.Attribute.IsDefined(i,typeof (Glass.Mapper.Sc.Configuration.Attributes.SitecoreTypeAttribute)));
 
             foreach (var field in fields)
             {
@@ -401,7 +408,8 @@ namespace Glass.Mapper.Sc.CodeFirst
 
                 if (field.CodeFirst && field.SectionName == section.Name && !ID.IsNullOrEmpty(field.FieldId))
                 {
-                    var record = FieldTable.FirstOrDefault(x => x.FieldId == field.FieldId);
+                    var fieldtable = FieldTable.ToList();//prevent "Collection was modified"
+                    var record = fieldtable.FirstOrDefault(x => x.FieldId == field.FieldId);
                     //test if the fields exists in the database: if so, we're using codefirst now, so remove it.
                     var existing = sqlProvider.GetItemDefinition(field.FieldId, context);
                     if (existing != null)
@@ -412,11 +420,11 @@ namespace Glass.Mapper.Sc.CodeFirst
                             {
                                 using (new DisableItemHandler())
                                     sqlProvider.DeleteItem(existing, context);
-                            }
+                    }
                             else
                             {
-                                sqlProvider.DeleteItem(existing, context);
-                            }
+                            sqlProvider.DeleteItem(existing, context);
+                    }
                         }
                     }
 
@@ -439,7 +447,7 @@ namespace Glass.Mapper.Sc.CodeFirst
                     }
 
                     fieldIds.Add(record.FieldId);
-                    FieldTable.Add(record);
+                    FieldTable = FieldTable.Add(record);
                 }
             }
 
@@ -459,14 +467,16 @@ namespace Glass.Mapper.Sc.CodeFirst
             if (!_setupComplete)
                 return base.GetParentID(itemDefinition, context);
 
-            var section = SectionTable.FirstOrDefault(x => x.SectionId == itemDefinition.ID);
+            var sectionTable = SectionTable.ToList();//prevent "Collection was modified"
+            var section = sectionTable.FirstOrDefault(x => x.SectionId == itemDefinition.ID);
 
             if (section != null)
             {
                 return section.TemplateId;
             }
 
-            var field = FieldTable.FirstOrDefault(x => x.FieldId == itemDefinition.ID);
+            var fieldtable = FieldTable.ToList();//prevent "Collection was modified"
+            var field = fieldtable.FirstOrDefault(x => x.FieldId == itemDefinition.ID);
             if (field != null)
             {
                 return field.SectionId;
@@ -516,7 +526,7 @@ namespace Glass.Mapper.Sc.CodeFirst
         /// Setups the specified context.
         /// </summary>
         /// <param name="db">The db.</param>
-        public void Initialise(Database db)
+        public  void Initialise(Database db)
         {
             if (_setupComplete || _setupProcessing)
                 return;
@@ -814,7 +824,7 @@ namespace Glass.Mapper.Sc.CodeFirst
 
             while (baseType != null)
             {
-                idCheck(baseType);    
+                idCheck(baseType);
                 baseType = baseType.BaseType;
             }
 

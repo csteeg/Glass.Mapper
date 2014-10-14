@@ -221,6 +221,7 @@ namespace Glass.Mapper.Sc.Configuration.Attributes
 
 
             //code first configuration
+            
             var fieldFieldValues = propertyInfo.GetCustomAttributes(typeof(SitecoreFieldFieldValueAttribute), true).Cast<SitecoreFieldFieldValueAttribute>();
  
             ////fix: fieldfieldvalues are not passed
@@ -233,6 +234,7 @@ namespace Glass.Mapper.Sc.Configuration.Attributes
             var ffvConfigs = fieldFieldValues.Select(x => x.Configure(propertyInfo, config));
             config.FieldValueConfigs = ffvConfigs.ToList();
             base.Configure(propertyInfo, config);
+
         }
     }
 }

@@ -48,6 +48,8 @@ namespace Glass.Mapper.Sc
     {
         private static readonly Type ImageType = typeof(Fields.Image);
         private static readonly Type LinkType = typeof(Fields.Link );
+        public const string Parameters = "Parameters";
+
 
         /// <summary>
         /// Gets the sitecore context.
@@ -152,7 +154,7 @@ namespace Glass.Mapper.Sc
         /// <returns></returns>
         public virtual T GetRenderingParameters<T>(string parameters) where T : class
         {
-            var config = SitecoreContext.GlassContext[typeof (T)] as SitecoreTypeConfiguration;
+            var config = SitecoreContext.GlassContext.GetTypeConfiguration < SitecoreTypeConfiguration>(typeof(T));
             return GetRenderingParameters<T>(parameters, config.TemplateId);
         }
 
@@ -314,6 +316,7 @@ namespace Glass.Mapper.Sc
 
             var sb = new StringBuilder();
             var writer = new StringWriter(sb);
+            var linkField = field.Compile().Invoke(model) as Fields.Link;
 
             RenderingResult result = null;
             if (IsInEditingMode && isEditable)
@@ -323,6 +326,12 @@ namespace Glass.Mapper.Sc
                 if (contents.IsNotNullOrEmpty())
                 {
                     attrs.Add("haschildren", "true");
+                }
+
+                if (linkField != null)
+                {
+                    AttributeCheck(attrs, "class", linkField.Class);
+                    AttributeCheck(attrs, "title", linkField.Title);
                 }
 
                 result = MakeEditable(
@@ -568,7 +577,7 @@ namespace Glass.Mapper.Sc
                             renderFieldArgs.FieldName = fieldConfig.FieldName;
                         }
 
-                        renderFieldArgs.Parameters = WebUtil.ParseQueryString(parametersString ?? string.Empty);
+                        renderFieldArgs.Parameters = WebUtil.ParseQueryString(parametersString ?? string.Empty, true);
                         renderFieldArgs.DisableWebEdit = false;
 
                         CorePipeline.Run("renderField", (PipelineArgs) renderFieldArgs);
